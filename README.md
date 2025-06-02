@@ -34,6 +34,21 @@ Vector DB (FAISS), BM25, Hybrid Retriever
 - **Persistent Vector DBs**: Save and reload processed document databases.
 - **Server Logs**: Live server log panel for transparency and debugging.
 
+## ✨ Additional Features
+- Processing status polling and user feedback during document ingestion
+- Cancel upload and cancel answer actions in the UI
+- Modular service-based backend (document, query, log services)
+- In-memory and persistent logging for transparency
+- Support for multiple saved databases and easy switching
+- Error handling and user-friendly status messages
+
+## 🚀 Scalability & Extensibility
+- **Backend**: Built on FastAPI and LangChain, enabling easy extension to new file types, retrieval strategies, or LLMs.
+- **Vector DB**: Uses FAISS for scalable vector search; can be swapped for distributed or cloud-based vector stores.
+- **Retrieval**: Modular retriever design allows plugging in new algorithms or hybrid strategies.
+- **UI**: Jinja2 templating and REST API make it easy to build richer frontends or integrate with other systems.
+- **Deployment**: Can be containerized and deployed on cloud platforms with GPU/CPU scaling as needed.
+- **Multi-user**: Architecture supports extension to multi-user, multi-session, or authentication-enabled deployments.
 
 ## 📝 Usage
 - **Upload** a PDF or HTML file using the web interface.

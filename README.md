@@ -1,4 +1,4 @@
-# RAG PDF/HTML QA System
+# RAG QA System
 
 A Retrieval-Augmented Generation (RAG) web server for question answering over your own PDF documents. Built with FastAPI, LangChain, and Ollama, this project enables users to upload documents, process them into vector databases, and interactively query their content using advanced LLMs.
 
@@ -52,3 +52,28 @@ Vector DB (FAISS), BM25, Hybrid Retriever
 - **Model Requirements**: Requires Ollama and the DeepSeek model running locally.
 - **File Types**: Only PDF supported.
 
+
+## 🧪 API Endpoints
+
+| Endpoint                | Method | Description                                             |
+|-------------------------|--------|---------------------------------------------------------|
+| `/upload`               | POST   | Upload PDF/HTML                                         |
+| `/query`                | GET    | Ask question (via query param, SSE streaming)           |
+| `/query`                | POST   | Ask question (JSON, legacy/alt)                         |
+| `/set_search_mode`      | POST   | Set retrieval mode (semantic, keyword, hybrid)          |
+| `/processing_status/{base_name}` | GET | Get processing status for uploaded file             |
+| `/saved_dbs`            | GET    | List all saved vector databases                         |
+| `/load_db/{db_name}`    | GET    | Load a specific saved vector database                   |
+| `/logs`                 | GET    | Fetch server logs for UI panel                          |
+
+
+## ⚠️ Disclaimer
+This repo is a conceptual demo for technical evaluation only. To use this in production or extend further, please reach out.
+
+## 📄 License
+
+This project is licensed under a custom MIT License (viewing only, no execution or deployment allowed without written consent). See the [LICENSE](./LICENSE) file for full terms.
+
+Permission is granted to view and review the code for evaluation purposes only. Running, modifying, distributing, or deploying this code in any environment (local or production) is strictly prohibited without prior written consent from the copyright holder.
+
+For licensing or usage inquiries, contact: rkarir@gmail.com

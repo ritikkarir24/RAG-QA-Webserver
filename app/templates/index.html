@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG PDF QA System</title>
+    <style>
+        body {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+            font-family: Arial, sans-serif;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        input[type="text"] {
+            width: 300px;
+            padding: 8px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #response {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+            background-color: #f9f9f9;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .disabled {
+            opacity: 0.6;
+            cursor: not-allowed !important;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            text-align: center;
+            margin-top: 5px;
+        }
+        select {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        label {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        #savedDbsSection {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .db-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .db-item button {
+            margin-left: 10px;
+        }
+        #main-container {
+            display: flex;
+            flex-direction: row;
+            gap: 30px;
+        }
+        #left-panel {
+            flex: 2;
+        }
+        #log-panel {
+            flex: 1;
+            max-width: 320px;
+            min-width: 220px;
+            background: #f3f3f3;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 10px;
+            height: 600px;
+            overflow-y: auto;
+        }
+        #log-panel h3 {
+            margin-top: 0;
+        }
+        .log-entry {
+            font-size: 0.95em;
+            margin-bottom: 6px;
+            color: #333;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 2px;
+        }
+    </style>
+</head>
+<body>
+<div id="main-container">
+    <div id="left-panel">
+        <h2>RAG PDF/HTML QA System</h2>
+        <div class="form-group">
+            <form id="uploadForm">
+                <input type="file" name="file" id="file" accept=".pdf,.html" required>
+                <button type="submit" id="uploadBtn">Upload PDF/HTML</button>
+                <button type="button" id="cancelUploadBtn" style="display:none; margin-left:10px; background:#e74c3c;">Cancel Upload</button>
+                <div class="spinner" id="uploadSpinner" style="display:none;"></div>
+                <div class="progress" id="uploadProgress">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <div class="progress-text" id="progressText">0%</div>
+                </div>
+            </form>
+        </div>
+        <div class="form-group">
+            <form id="modeForm">
+                <label for="searchMode">Search Mode:</label>
+                <select id="searchMode" name="searchMode">
+                    <option value="hybrid">Hybrid (Default)</option>
+                    <option value="semantic">Semantic</option>
+                    <option value="keyword">Keyword</option>
+                </select>
+                <button type="submit" id="modeBtn">Set Mode</button>
+                <div class="spinner" id="modeSpinner" style="display:none;"></div>
+            </form>
+        </div>
+        <hr>
+        <div class="form-group">
+            <form id="queryForm">
+                <input type="text" name="question" id="question" placeholder="Type your question here" required>
+                <button type="submit" id="askBtn">Ask</button>
+                <button type="button" id="cancelQueryBtn" style="display:none; margin-left:10px; background:#e74c3c;">Cancel Answer</button>
+                <div class="spinner" id="querySpinner" style="display:none;"></div>
+            </form>
+        </div>
+        <div id="response">Your answer will appear here...</div>
+        <div class="form-group" id="savedDbsSection">
+            <h3>Saved Databases</h3>
+            <div id="dbList"></div>
+            <button type="button" id="refreshDbsBtn" onclick="loadSavedDbs()">Refresh List</button>
+        </div>
+    </div>
+    <div id="log-panel">
+        <h3>Server Logs</h3>
+        <div id="logWindow"></div>
+    </div>
+</div>
+<script>
+let currentUploadXhr = null;
+let currentEventSource = null;
+let lastUploadedBaseName = null;
+let processingStatusInterval = null;
+
+function setUploadUIState(isUploading) {
+    document.getElementById('uploadBtn').disabled = isUploading;
+    document.getElementById('cancelUploadBtn').style.display = isUploading ? 'inline-block' : 'none';
+    document.getElementById('uploadSpinner').style.display = isUploading ? 'inline-block' : 'none';
+    document.getElementById('uploadProgress').style.display = isUploading ? 'block' : 'none';
+}
+
+function setQueryUIState(isQuerying) {
+    document.getElementById('askBtn').disabled = isQuerying;
+    document.getElementById('cancelQueryBtn').style.display = isQuerying ? 'inline-block' : 'none';
+    document.getElementById('querySpinner').style.display = isQuerying ? 'inline-block' : 'none';
+}
+
+function setAskEnabled(enabled) {
+    document.getElementById('askBtn').disabled = !enabled;
+    document.getElementById('question').disabled = !enabled;
+}
+
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    setUploadUIState(true);
+    setAskEnabled(false);
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    progressBar.style.width = '0%';
+    progressText.textContent = '0%';
+    const formData = new FormData();
+    const file = document.getElementById('file').files[0];
+    formData.append('file', file);
+    currentUploadXhr = new XMLHttpRequest();
+    currentUploadXhr.open('POST', '/upload', true);
+    currentUploadXhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+            const percentComplete = (e.loaded / e.total) * 100;
+            progressBar.style.width = percentComplete + '%';
+            progressText.textContent = Math.round(percentComplete) + '%';
+        }
+    };
+    currentUploadXhr.onload = function() {
+        setUploadUIState(false);
+        if (currentUploadXhr.status === 200) {
+            const result = JSON.parse(currentUploadXhr.responseText);
+            alert(result.message || result.status);
+            loadSavedDbs();
+            if (result.base_name) {
+                lastUploadedBaseName = result.base_name;
+                pollProcessingStatus(result.base_name);
+            }
+        } else {
+            alert('Upload failed: ' + currentUploadXhr.statusText);
+            setAskEnabled(true);
+        }
+        resetUploadForm();
+        currentUploadXhr = null;
+    };
+    currentUploadXhr.onerror = function() {
+        setUploadUIState(false);
+        alert('Upload failed');
+        setAskEnabled(true);
+        resetUploadForm();
+        currentUploadXhr = null;
+    };
+    currentUploadXhr.onabort = function() {
+        setUploadUIState(false);
+        alert('Upload cancelled.');
+        setAskEnabled(true);
+        resetUploadForm();
+        currentUploadXhr = null;
+    };
+    currentUploadXhr.send(formData);
+});
+
+document.getElementById('cancelUploadBtn').addEventListener('click', function() {
+    if (currentUploadXhr) {
+        currentUploadXhr.abort();
+    }
+});
+
+function pollProcessingStatus(baseName) {
+    setAskEnabled(false);
+    const responseDiv = document.getElementById('response');
+    responseDiv.innerHTML = '<span class="loading">Processing uploaded file...</span>';
+    if (processingStatusInterval) clearInterval(processingStatusInterval);
+    processingStatusInterval = setInterval(async function() {
+        try {
+            const res = await fetch(`/processing_status/${baseName}`);
+            const data = await res.json();
+            if (data.status === 'done') {
+                clearInterval(processingStatusInterval);
+                processingStatusInterval = null;
+                setAskEnabled(true);
+                responseDiv.innerHTML = '<span class="loading">Processing complete. You can now ask questions.</span>';
+            } else if (data.status === 'error') {
+                clearInterval(processingStatusInterval);
+                processingStatusInterval = null;
+                setAskEnabled(false);
+                responseDiv.innerHTML = `<span class='loading' style='color:red;'>Processing failed: ${data.error}</span>`;
+            } else {
+                setAskEnabled(false);
+                responseDiv.innerHTML = '<span class="loading">Processing uploaded file...</span>';
+            }
+        } catch (e) {
+            // Optionally show error
+        }
+    }, 2000);
+}
+
+document.getElementById('modeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const modeBtn = document.getElementById('modeBtn');
+    const spinner = document.getElementById('modeSpinner');
+    const mode = document.getElementById('searchMode').value;
+    modeBtn.disabled = true;
+    spinner.style.display = 'inline-block';
+    try {
+        const response = await fetch('/set_search_mode', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ mode: mode })
+        });
+        const result = await response.json();
+        alert(result.status || result.message);
+    } catch (error) {
+        alert('Error setting search mode');
+    } finally {
+        modeBtn.disabled = false;
+        spinner.style.display = 'none';
+    }
+});
+
+document.getElementById('queryForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    setQueryUIState(true);
+    const askBtn = document.getElementById('askBtn');
+    const spinner = document.getElementById('querySpinner');
+    const responseDiv = document.getElementById('response');
+    responseDiv.innerHTML = '<span class="loading">Processing your question...</span>';
+    const question = document.getElementById('question').value;
+    const url = `/query?question=${encodeURIComponent(question)}`;
+    if (currentEventSource) {
+        currentEventSource.close();
+    }
+    currentEventSource = new EventSource(url);
+    let fullResponse = '';
+    currentEventSource.onmessage = function(event) {
+        if (event.data) {
+            fullResponse += event.data;
+            responseDiv.innerHTML = fullResponse;
+        }
+    };
+    currentEventSource.onerror = function(err) {
+        setQueryUIState(false);
+        if (currentEventSource && currentEventSource.readyState === 2) { // CLOSED
+            // Try to fetch error detail from /query endpoint
+            fetch(url)
+                .then(r => {
+                    if (r.status === 409) {
+                        return r.json().then(data => {
+                            responseDiv.innerHTML = `<span class='loading' style='color:red;'>${data.detail}</span>`;
+                        });
+                    } else {
+                        responseDiv.innerHTML = 'Error: Failed to get response';
+                    }
+                })
+                .catch(() => {
+                    responseDiv.innerHTML = 'Error: Failed to get response';
+                });
+        } else {
+            responseDiv.innerHTML = 'Error: Failed to get response';
+        }
+        currentEventSource.close();
+        currentEventSource = null;
+    };
+    currentEventSource.onclose = function() {
+        setQueryUIState(false);
+        currentEventSource = null;
+    };
+});
+
+document.getElementById('cancelQueryBtn').addEventListener('click', function() {
+    if (currentEventSource) {
+        currentEventSource.close();
+        setQueryUIState(false);
+        document.getElementById('response').innerHTML = '<span class="loading">Answer cancelled.</span>';
+        currentEventSource = null;
+    }
+});
+
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const uploadBtn = document.getElementById('uploadBtn');
+        const spinner = document.getElementById('uploadSpinner');
+        const progressDiv = document.getElementById('uploadProgress');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        
+        uploadBtn.disabled = true;
+        spinner.style.display = 'inline-block';
+        progressDiv.style.display = 'block';
+        
+        const formData = new FormData();
+        const file = document.getElementById('file').files[0];
+        formData.append('file', file);
+        
+        try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                    progressText.textContent = Math.round(percentComplete) + '%';
+                }
+            };
+            
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    const result = JSON.parse(xhr.responseText);
+                    alert(result.message || result.status);
+                    loadSavedDbs();  // Refresh the database list after successful upload
+                } else {
+                    alert('Upload failed: ' + xhr.statusText);
+                }
+                resetUploadForm();
+            };
+            
+            xhr.onerror = function() {
+                alert('Upload failed');
+                resetUploadForm();
+            };
+            
+            xhr.send(formData);
+        } catch (error) {
+            alert('Error uploading file');
+            resetUploadForm();
+        }
+    });
+
+    document.getElementById('modeForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const modeBtn = document.getElementById('modeBtn');
+        const spinner = document.getElementById('modeSpinner');
+        const mode = document.getElementById('searchMode').value;
+        
+        modeBtn.disabled = true;
+        spinner.style.display = 'inline-block';
+        
+        try {
+            const response = await fetch('/set_search_mode', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ mode: mode })
+            });
+            
+            const result = await response.json();
+            alert(result.status || result.message);
+        } catch (error) {
+            alert('Error setting search mode');
+        } finally {
+            modeBtn.disabled = false;
+            spinner.style.display = 'none';
+        }
+    });
+
+    document.getElementById('queryForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const askBtn = document.getElementById('askBtn');
+        const spinner = document.getElementById('querySpinner');
+        const responseDiv = document.getElementById('response');
+        
+        askBtn.disabled = true;
+        spinner.style.display = 'inline-block';
+        responseDiv.innerHTML = '<span class="loading">Processing your question...</span>';
+        
+        const question = document.getElementById('question').value;
+        const url = `/query?question=${encodeURIComponent(question)}`;
+        
+        if (window.eventSource) {
+            window.eventSource.close();
+        }
+
+        window.eventSource = new EventSource(url);
+        let fullResponse = '';
+
+        window.eventSource.onmessage = function(event) {
+            if (event.data) {
+                fullResponse += event.data;
+                responseDiv.innerHTML = fullResponse;
+            }
+        };
+        
+        window.eventSource.onerror = function(err) {
+            console.error("EventSource failed:", err);
+            window.eventSource.close();
+            responseDiv.innerHTML = 'Error: Failed to get response';
+            askBtn.disabled = false;
+            spinner.style.display = 'none';
+        };
+
+        window.eventSource.onclose = function() {
+            askBtn.disabled = false;
+            spinner.style.display = 'none';
+        };
+    });
+
+    async function loadSavedDbs() {
+        try {
+            const response = await fetch('/saved_dbs');
+            const data = await response.json();
+            const dbList = document.getElementById('dbList');
+            dbList.innerHTML = '';
+            
+            if (data.databases.length === 0) {
+                dbList.innerHTML = '<p>No saved databases found</p>';
+                return;
+            }
+
+            data.databases.forEach(db => {
+                const dbDiv = document.createElement('div');
+                dbDiv.className = 'db-item';
+                dbDiv.innerHTML = `
+                    <span>${db}</span>
+                    <div>
+                        <button onclick="loadDatabase('${db}')">Load</button>
+                    </div>
+                `;
+                dbList.appendChild(dbDiv);
+            });
+        } catch (error) {
+            console.error('Error loading databases:', error);
+        }
+    }
+
+    async function loadDatabase(dbName) {
+        try {
+            const response = await fetch(`/load_db/${dbName}`);
+            const result = await response.json();
+            alert(result.message || result.status);
+        } catch (error) {
+            alert('Error loading database');
+        }
+    }
+
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/logs');
+            const data = await response.json();
+            const logWindow = document.getElementById('logWindow');
+            logWindow.innerHTML = '';
+            (data.logs || []).forEach(log => {
+                const div = document.createElement('div');
+                div.className = 'log-entry';
+                div.textContent = log;
+                logWindow.appendChild(div);
+            });
+            logWindow.scrollTop = logWindow.scrollHeight;
+        } catch (e) {
+            // Optionally show error
+        }
+    }
+    setInterval(fetchLogs, 2000);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSavedDbs();
+        fetchLogs();
+    });
+
+    function resetUploadForm() {
+        document.getElementById('uploadBtn').disabled = false;
+        document.getElementById('uploadSpinner').style.display = 'none';
+        document.getElementById('uploadProgress').style.display = 'none';
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressText').textContent = '0%';
+    }
+
+    function resetQueryForm() {
+        document.getElementById('askBtn').disabled = false;
+        document.getElementById('querySpinner').style.display = 'none';
+    }
+</script>
+</body>
+</html>
